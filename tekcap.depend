@@ -1,0 +1,9 @@
+# depslib dependency file v1.0
+1620883484 source:e:\documents and settings\tim williams\my documents\watcom c compiler\projects\tekcap\main.c
+	<windows.h>
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<tchar.h>
+	<shlwapi.h>
+
