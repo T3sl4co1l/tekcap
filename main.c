@@ -5,7 +5,7 @@
  *	Command line arguments:
  *		TEKCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.bmp]>
  *
- *		-p			Set port (default COM11)
+ *		-p			Set port (default COM14)
  *		-b			Baud rate (default 230400);
  *					uses 8,N,1 serial configuration.
  *		-a			Instrument GPIB address (default 1)
@@ -25,16 +25,17 @@
 
 
 #define STRING_AND_LENGTH(x)		x, sizeof(x) - 1
+#define MAX_TIMEOUTS		1
 
 int main(int argc, char* argv[]);
 
 
 HANDLE hComm;
 HANDLE hOutput;
-char portname[256] = "\\\\.\\COM11";
+char portname[256] = "\\\\.\\COM14";
 char filename[256];
 char strBuf[1024];
-int baud = 230400;
+long baud = 230400;
 int address = 1;
 
 
@@ -45,7 +46,7 @@ int main(int argc, char* argv[]) {
 
 	printf("\n");
 	printf("GPIB-Serial Tektronix scope screenshot tool\n");
-	printf("By Tim Williams, 2021/05/11\n");
+	printf("By Tim Williams, 2024/07/13\n");
 	printf("\n");
 
 	if (argc <= 1) {
@@ -53,7 +54,7 @@ int main(int argc, char* argv[]) {
 		printf("Command line arguments:\n");
 		printf("\tTEKCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.bmp]>\n");
 		printf("\n");
-		printf("    -p\t\tSet port (default COM11)\n");
+		printf("    -p\t\tSet port (default COM14)\n");
 		printf("    -b\t\tBaud rate (default 230400);\n");
 		printf("\t\tuses 8,N,1 serial configuration.\n");
 		printf("    -a\t\tInstrument GPIB address (default 1)\n");
@@ -95,8 +96,8 @@ int main(int argc, char* argv[]) {
 		printf("Address %i out of range.\n", address);
 		return 2;
 	}
-	if (baud < 0) {
-		printf("Baud rate %i out of range.\n", baud);
+	if (baud < 0 || baud > 6000000l) {
+		printf("Baud rate %li out of range.\n", baud);
 		return 3;
 	}
 	//	Copy filename (it'll be parsed later, just before opening)
@@ -149,22 +150,32 @@ int main(int argc, char* argv[]) {
 	COMMTIMEOUTS ctComm = {
 		.ReadIntervalTimeout			= 1000,
 		.ReadTotalTimeoutMultiplier		= 0,
-		.ReadTotalTimeoutConstant		= 0,
+		.ReadTotalTimeoutConstant		= 1000,
 		.WriteTotalTimeoutMultiplier	= 1,
 		.WriteTotalTimeoutConstant		= 100
 	};
 	err = err && SetCommTimeouts(hComm, &ctComm);
 	err = err && SetupComm(hComm, 1024, 1024);	//	Set minimum buffer sizes -- should be close to default anyway
 	if (!err) {
-		printf("Error configuring port %s.\n", portname);
+		printf("IO error configuring port %s.\n", portname);
 		err = 5; goto mainOut;
 	}
 
 	//	See if anyone's out there
-	err = WriteFile(hComm, STRING_AND_LENGTH("+ver\r"), (LPDWORD)&numBytes, NULL);
+	err = WriteFile(hComm, STRING_AND_LENGTH("\r\r+read\r"), (LPDWORD)&numBytes, NULL);
+	//	Make sure no pending transactions, clear buffer
+	do {
+		Sleep(10);
+		if (!ReadFile(hComm, strBuf, sizeof(strBuf), (LPDWORD)&numBytes, NULL)) {
+			printf("IO Error clearing input buffer.\n");
+			err = 12; goto mainOut;
+		}
+	} while (numBytes > 0);
+	err = err && WriteFile(hComm, STRING_AND_LENGTH("+ver\r"), (LPDWORD)&numBytes, NULL);
+	Sleep(10);
 	err = err && ReadFile(hComm, strBuf, sizeof(strBuf), (LPDWORD)&numBytes, NULL);
 	if (!err) {
-		printf("Error testing port.\n");
+		printf("IO error testing port.\n");
 		err = 6; goto mainOut;
 	}
 	strBuf[numBytes] = 0;
@@ -185,27 +196,52 @@ int main(int argc, char* argv[]) {
 				NULL);
 
 	if (hOutput == INVALID_HANDLE_VALUE) {
-		printf("Error opening file %s.\n", filename);
+		printf("IO error opening file %s.\n", filename);
 		err = 7; goto mainOut;
 	}
 
 	sprintf_s(strBuf, sizeof(strBuf) - 1, "++addr %i\r++mode 1\rHARDC STAR\r+read\r", address);
 	if (!WriteFile(hComm, strBuf, strlen(strBuf), (LPDWORD)&numBytes, NULL)) {
-		printf("Error writing command.\n");
+		printf("IO error writing command.\n");
 		err = 8; goto mainOut;
 	}
 
+	long int lastTicks = GetTickCount();
+	int bytesTilDot = 0;
+	int timeout = 0;
 	do {
+		Sleep(10);
+		if (GetTickCount() - lastTicks > 1000) {
+			//	Seems to be taking a while to get more data... kick it with a +read?
+			sprintf_s(strBuf, sizeof(strBuf) - 1, "+read\r");
+			if (!WriteFile(hComm, strBuf, strlen(strBuf), (LPDWORD)&numBytes, NULL)) {
+				printf("IO error during timeout retry.\n");
+				err = 11; goto mainOut;
+			}
+			timeout++;
+			lastTicks = GetTickCount();
+			Sleep(10);
+		}
 		if (!ReadFile(hComm, strBuf, sizeof(strBuf), (LPDWORD)&numBytes, NULL)) {
-			printf("Error reading data.\n");
+			printf("IO error reading data.\n");
 			err = 9; goto mainOut;
 		}
-		if (!WriteFile(hOutput, strBuf, numBytes, (LPDWORD)&numBytes, NULL)) {
-			printf("Error writing output.\n");
-			err = 10; goto mainOut;
+		if (numBytes > 0) {
+			timeout = FALSE;
+			if (!WriteFile(hOutput, strBuf, numBytes, (LPDWORD)&numBytes, NULL)) {
+				printf("IO error writing output.\n");
+				err = 10; goto mainOut;
+			}
+			bytesTilDot += numBytes;
+			if (bytesTilDot > sizeof(strBuf)) {
+				printf(".");
+				bytesTilDot -= sizeof(strBuf);
+			}
+			lastTicks = GetTickCount();
 		}
-		printf(".");
-	} while (numBytes == sizeof(strBuf));
+	} while (timeout < MAX_TIMEOUTS);
+	sprintf_s(strBuf, sizeof(strBuf) - 1, "\r");
+	WriteFile(hComm, strBuf, strlen(strBuf), (LPDWORD)&numBytes, NULL);
 	printf("\nDone.\n");
 
 	err = 0;
@@ -234,6 +270,7 @@ mainOut:
 
 	CloseHandle(hComm);
 	CloseHandle(hOutput);
+	Sleep(500);
 
 	return err;
 
