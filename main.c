@@ -1,6 +1,7 @@
 /*
  *	GPIB-Serial Tektronix scope screenshot tool
  *	By Tim Williams, 2021/05/11
+ *	Updated 2024/09/13: minor poking at re-read function, sleep intervals.
  *
  *	Command line arguments:
  *		TEKCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.bmp]>
@@ -26,6 +27,7 @@
 
 #define STRING_AND_LENGTH(x)		x, sizeof(x) - 1
 #define MAX_TIMEOUTS		1
+#define MS_WAIT		1
 
 int main(int argc, char* argv[]);
 
@@ -46,7 +48,7 @@ int main(int argc, char* argv[]) {
 
 	printf("\n");
 	printf("GPIB-Serial Tektronix scope screenshot tool\n");
-	printf("By Tim Williams, 2024/07/13\n");
+	printf("By Tim Williams, 2024/09/13\n");
 	printf("\n");
 
 	if (argc <= 1) {
@@ -172,7 +174,7 @@ int main(int argc, char* argv[]) {
 		}
 	} while (numBytes > 0);
 	err = err && WriteFile(hComm, STRING_AND_LENGTH("+ver\r"), (LPDWORD)&numBytes, NULL);
-	Sleep(10);
+	Sleep(100);
 	err = err && ReadFile(hComm, strBuf, sizeof(strBuf), (LPDWORD)&numBytes, NULL);
 	if (!err) {
 		printf("IO error testing port.\n");
@@ -200,7 +202,13 @@ int main(int argc, char* argv[]) {
 		err = 7; goto mainOut;
 	}
 
-	sprintf_s(strBuf, sizeof(strBuf) - 1, "++addr %i\r++mode 1\rHARDC STAR\r+read\r", address);
+	sprintf_s(strBuf, sizeof(strBuf) - 1, "++addr %i\r++mode 1\rHARDC STAR\r", address);
+	if (!WriteFile(hComm, strBuf, strlen(strBuf), (LPDWORD)&numBytes, NULL)) {
+		printf("IO error writing command.\n");
+		err = 8; goto mainOut;
+	}
+	Sleep(500);
+	sprintf_s(strBuf, sizeof(strBuf) - 1, "+read\r", address);
 	if (!WriteFile(hComm, strBuf, strlen(strBuf), (LPDWORD)&numBytes, NULL)) {
 		printf("IO error writing command.\n");
 		err = 8; goto mainOut;
@@ -210,7 +218,6 @@ int main(int argc, char* argv[]) {
 	int bytesTilDot = 0;
 	int timeout = 0;
 	do {
-		Sleep(10);
 		if (GetTickCount() - lastTicks > 1000) {
 			//	Seems to be taking a while to get more data... kick it with a +read?
 			sprintf_s(strBuf, sizeof(strBuf) - 1, "+read\r");
@@ -220,6 +227,7 @@ int main(int argc, char* argv[]) {
 			}
 			timeout++;
 			lastTicks = GetTickCount();
+			printf(":");
 			Sleep(10);
 		}
 		if (!ReadFile(hComm, strBuf, sizeof(strBuf), (LPDWORD)&numBytes, NULL)) {
@@ -227,7 +235,7 @@ int main(int argc, char* argv[]) {
 			err = 9; goto mainOut;
 		}
 		if (numBytes > 0) {
-			timeout = FALSE;
+			timeout = 0;
 			if (!WriteFile(hOutput, strBuf, numBytes, (LPDWORD)&numBytes, NULL)) {
 				printf("IO error writing output.\n");
 				err = 10; goto mainOut;
@@ -239,6 +247,7 @@ int main(int argc, char* argv[]) {
 			}
 			lastTicks = GetTickCount();
 		}
+		Sleep(20);
 	} while (timeout < MAX_TIMEOUTS);
 	sprintf_s(strBuf, sizeof(strBuf) - 1, "\r");
 	WriteFile(hComm, strBuf, strlen(strBuf), (LPDWORD)&numBytes, NULL);
