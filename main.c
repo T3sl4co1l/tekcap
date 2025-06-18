@@ -46,24 +46,28 @@ int main(int argc, char* argv[]) {
 	int i, err = 0;
 	int numBytes;
 
-	printf("\n");
-	printf("GPIB-Serial Tektronix scope screenshot tool\n");
-	printf("By Tim Williams, 2024/09/13\n");
-	printf("\n");
+	puts(
+		"\n"
+		"GPIB-Serial Tektronix scope screenshot tool\n"
+		"By Tim Williams, 2024/09/13\n"
+		"\n"
+	);
 
 	if (argc <= 1) {
 
-		printf("Command line arguments:\n");
-		printf("\tTEKCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.bmp]>\n");
-		printf("\n");
-		printf("    -p\t\tSet port (default COM14)\n");
-		printf("    -b\t\tBaud rate (default 230400);\n");
-		printf("\t\tuses 8,N,1 serial configuration.\n");
-		printf("    -a\t\tInstrument GPIB address (default 1)\n");
-		printf(" <output>\tOutput file name.  If extension not given,\n");
-		printf("\t\t.BMP is assumed (to write no extension, use '.').\n");
-		printf("\n");
-		printf("Run with no parameters to see this help message.\n");
+		puts(
+			"Command line arguments:\n"
+			"\tTEKCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.bmp]>\n"
+			"\n"
+			"    -p   \tSet port (default COM14)\n"
+			"    -b   \tBaud rate (default 230400);\n"
+			"         \tuses 8,N,1 serial configuration.\n"
+			"    -a   \tInstrument GPIB address (default 1).\n"
+			" <output>\tOutput file name.  If extension not given, .BMP\n"
+			"         \tis assumed (to write no extension, use '.').\n"
+			"\n"
+			"Run with no parameters to see this help message.\n"
+		);
 
 		return 0;
 	}
