@@ -2,17 +2,18 @@
  *	GPIB-Serial Tektronix scope screenshot tool
  *	By Tim Williams, 2021/05/11
  *	Updated 2024/09/13: minor poking at re-read function, sleep intervals.
+ *	Updated 2026/06/10: HP8590A spectrum analyzer version.
  *
  *	Command line arguments:
- *		TEKCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.bmp]>
+ *		HPCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.hgl]>
  *
  *		-p			Set port (default COM14)
  *		-b			Baud rate (default 230400);
- *					uses 8,N,1 serial configuration.
- *		-a			Instrument GPIB address (default 1)
+ *					uses 8,N,1 serial configuration
+ *		-a			Instrument GPIB address (default 18)
  *		<output>	Output file name.  If extension not given,
- *					.BMP is assumed (to write no extension, use '.').
- *					(TODO: autodetect by querying scope config)
+ *					.HGL is assumed (to write no extension, use '.')
+ *					(TODO: autodetect by querying spec config)
  *
  *	Run with no parameters to see this help message.
  */
@@ -42,7 +43,7 @@ char portname[256] = "\\\\.\\COM14";
 char filename[256];
 char strBuf[1024];
 long baud = 230400;
-int address = 1;
+int address = 18;
 
 
 int main(int argc, char* argv[]) {
@@ -52,8 +53,8 @@ int main(int argc, char* argv[]) {
 
 	puts(
 		"\n"
-		"GPIB-Serial Tektronix scope screenshot tool\n"
-		"By Tim Williams, 2024/09/13\n"
+		"GPIB-Serial HP8590A spectrum analyzer plotting tool\n"
+		"By Tim Williams, 2026/06/10\n"
 		"\n"
 	);
 
@@ -61,13 +62,13 @@ int main(int argc, char* argv[]) {
 
 		puts(
 			"Command line arguments:\n"
-			"\tTEKCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.bmp]>\n"
+			"\tHPCAP [-p <port>] [-b <baud>] [-a <addr>] <output[.hgl]>\n"
 			"\n"
 			"    -p   \tSet port (default COM14)\n"
 			"    -b   \tBaud rate (default 230400);\n"
-			"         \tuses 8,N,1 serial configuration.\n"
-			"    -a   \tInstrument GPIB address (default 1).\n"
-			" <output>\tOutput file name.  If extension not given, .BMP\n"
+			"         \tuses 8,N,1 serial configuration\n"
+			"    -a   \tInstrument GPIB address (default 18)\n"
+			" <output>\tOutput file name.  If extension not given, .HGL\n"
 			"         \tis assumed (to write no extension, use '.').\n"
 			"\n"
 			"Run with no parameters to see this help message.\n"
@@ -194,7 +195,7 @@ int main(int argc, char* argv[]) {
 
 	//	Append extension if none is found
 	if (*PathFindExtensionA(filename) == 0) {
-		strcat_s(filename, sizeof(filename) - 1, ".bmp");
+		strcat_s(filename, sizeof(filename) - 1, ".hgl");
 	}
 
 	//	Attempt to open output file
@@ -211,8 +212,8 @@ int main(int argc, char* argv[]) {
 		err = 7; goto mainOut;
 	}
 
-	//	we're going to assume `mode 1` is already set, since issuing it resets the spec an
-	sprintf_s(strBuf, sizeof(strBuf) - 1, "++addr %i\r"/*"++mode 1\r"*/"HARDC STAR\r", address);
+	//	we're going to assume `mode 1` is already set, since issuing it clears the instrument state
+	sprintf_s(strBuf, sizeof(strBuf) - 1, "++addr %i\r++llo\r"/*"++mode 1\r"*/"PLOT 0 0 10250 7700;\r", address);
 	if (!WriteFile(hComm, strBuf, strlen(strBuf), (LPDWORD)&numBytes, NULL)) {
 		printf("IO error writing command.\n");
 		err = 8; goto mainOut;
